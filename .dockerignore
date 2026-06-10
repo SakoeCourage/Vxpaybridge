@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.git/
+**/.gitignore
+**/.vscode/
+**/.idea/
+**/appsettings.json
+**/appsettings.Development.json
+**/appsettings.*.json
+!**/appsettings.Example.json
+**/Migrations/
