@@ -28,6 +28,7 @@ public class Program
 
         builder.Services.AddDbContext<DatabaseContext>(options =>
             options.UseNpgsql(connectionString)
+                .ConfigureWarnings(warnings => warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
         );
 
         // Configure Hangfire
