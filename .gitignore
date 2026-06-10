@@ -1,0 +1,57 @@
+## .NET build artifacts
+bin/
+obj/
+out/
+
+## Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+## Logs
+*.log
+logs/
+
+## NuGet packages (restored via dotnet restore)
+packages/
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Published output
+publish/
+
+## Runtime data
+*.pid
+*.seed
+
+## OS artifacts
+.DS_Store
+Thumbs.db
+
+## ============================================================
+##  SECRETS — never commit these
+## ============================================================
+# All appsettings variants are ignored.
+# Use appsettings.Example.json as the reference template.
+appsettings.json
+appsettings.*.json
+
+# .NET User Secrets (local machine only)
+secrets.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+## Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
