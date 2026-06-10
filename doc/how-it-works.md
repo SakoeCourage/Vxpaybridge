@@ -1,6 +1,6 @@
 # VxPayBridge — Payment Integration & State Orchestration
 
-VxPayBridge is a stateful orchestrator and payment gateway bridge designed to interface securely between internal applications (e.g. `ADBAuction`, Inventory Management) and **Paystack**. It ensures secure, transaction-safe, and idempotent payment processing without exposing core credentials or Paystack logic to frontend or multiple distinct backend systems.
+VxPayBridge is a stateful orchestrator and payment gateway bridge designed to interface securely between Variable X Solutions internal applications (e.g. `ADBAuction`, Inventory Management) and **Paystack**. It ensures secure, transaction-safe, and idempotent payment processing without exposing core credentials or Paystack logic to frontend or multiple distinct backend systems.
 
 ## Base URL
 All production endpoints are hosted at:
