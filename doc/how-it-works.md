@@ -38,7 +38,7 @@ sequenceDiagram
     Customer->>Paystack: Completes Payment
     Paystack->>Bridge: POST /api/webhooks/paystack (Webhook Event)
     Bridge->>Bridge: Validate Signature & Deduplicate Event
-    Bridge->>Bridge: Save Webhook Event & Enqueue Hangfire Job
+    Bridge->>Bridge: Save Webhook Event & Schedule Delivery
     Bridge-->>Paystack: 200 OK (Immediately acknowledge)
 
     %% Webhook Retry / Delivery
@@ -161,13 +161,13 @@ Public-facing endpoint target configured in your Paystack dashboard to receive r
 
 ---
 
-## ⚡ Background Webhook Delivery (Hangfire)
+## ⚡ Reliable Webhook Delivery
 
 To guarantee that your client application is notified of payment events even during network interruptions:
-1. When a webhook is verified, VxPayBridge saves the event to the database and immediately returns a `200 OK` to Paystack.
-2. An asynchronous background job is queued in **Hangfire** to deliver the webhook payload to the client app's registered `webhookUrl`.
+1. When a webhook is verified, VxPayBridge saves the event and immediately returns a `200 OK` to Paystack.
+2. An asynchronous background worker is scheduled to forward the webhook payload to the client app's registered `webhookUrl`.
 3. The delivery payload sent to the client application is signed using an HMAC SHA-256 signature passed in the `x-payload-signature` header.
-4. **Retry Logic**: If the client app returns a non-2xx status code, Hangfire will retry delivering the message automatically with exponential backoff.
+4. **Automatic Retries**: If your application is down or returns a non-2xx status code, the bridge will automatically retry delivering the notification with exponential backoff.
 
 ### Webhook Signature Verification in Client Apps
 When your application receives a webhook delivery from VxPayBridge, you should verify the signature to ensure it came from the bridge:
