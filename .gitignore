@@ -37,10 +37,11 @@ Thumbs.db
 ## ============================================================
 ##  SECRETS — never commit these
 ## ============================================================
-# All appsettings variants are ignored.
-# Use appsettings.Example.json as the reference template.
+# All appsettings variants are ignored EXCEPT the Example template.
+# Copy appsettings.Example.json → appsettings.json and fill in real values.
 appsettings.json
 appsettings.*.json
+!appsettings.Example.json
 
 # .NET User Secrets (local machine only)
 secrets.json
