@@ -174,3 +174,41 @@ When your application receives a webhook delivery from VxPayBridge, you should v
 1. Compute the HMAC SHA-256 signature of the raw request body bytes using your application's `clientSecret` as the key.
 2. Convert the computed hash to a hexadecimal string.
 3. Compare the computed hash with the signature provided in the `x-payload-signature` header (using a constant-time comparison).
+
+#### Code Examples
+
+##### C# (.NET)
+```csharp
+using System.Security.Cryptography;
+using System.Text;
+
+public static bool VerifySignature(string rawRequestBody, string clientSecret, string receivedSignature)
+{
+    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(clientSecret));
+    var computedBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(rawRequestBody));
+    var computedSignature = Convert.ToHexString(computedBytes).ToLowerInvariant();
+    
+    // Constant-time comparison to prevent timing attacks
+    return CryptographicOperations.FixedTimeEquals(
+        Encoding.UTF8.GetBytes(computedSignature), 
+        Encoding.UTF8.GetBytes(receivedSignature.ToLowerInvariant())
+    );
+}
+```
+
+##### Node.js
+```javascript
+const crypto = require('crypto');
+
+function verifySignature(rawRequestBody, clientSecret, receivedSignature) {
+    const computedSignature = crypto
+        .createHmac('sha256', clientSecret)
+        .update(rawRequestBody)
+        .digest('hex');
+        
+    return crypto.timingSafeEqual(
+        Buffer.from(computedSignature, 'utf-8'),
+        Buffer.from(receivedSignature, 'utf-8')
+    );
+}
+```

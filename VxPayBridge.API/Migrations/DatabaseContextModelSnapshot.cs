@@ -65,7 +65,7 @@ namespace VxPayBridge.API.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("ClientApps");
+                    b.ToTable("ClientApps", (string)null);
                 });
 
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.PaymentTransaction", b =>
@@ -115,7 +115,7 @@ namespace VxPayBridge.API.Migrations
                     b.HasIndex("ClientReference")
                         .IsUnique();
 
-                    b.ToTable("PaymentTransactions");
+                    b.ToTable("PaymentTransactions", (string)null);
                 });
 
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.WebhookEvent", b =>
@@ -156,7 +156,7 @@ namespace VxPayBridge.API.Migrations
 
                     b.HasIndex("ClientAppID");
 
-                    b.ToTable("WebhookEvents");
+                    b.ToTable("WebhookEvents", (string)null);
                 });
 
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.PaymentTransaction", b =>
