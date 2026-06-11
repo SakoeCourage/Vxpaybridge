@@ -6,6 +6,9 @@ public class PaymentTransaction
     public Guid ClientAppID { get; set; }
     public string ClientReference { get; set; } = string.Empty;
     public string GatewayTransactionID { get; set; } = string.Empty;
+    public string AudType { get; set; } = string.Empty;
+    public string AudID { get; set; } = string.Empty;
+    public string? MetadataJson { get; set; }
     public decimal Amount { get; set; }
     public string Currency { get; set; } = string.Empty;
     public string Status { get; set; } = "PENDING"; // INITIALIZING, PENDING, SUCCESS, FAILED

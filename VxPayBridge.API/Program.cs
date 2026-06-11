@@ -6,7 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using VxPayBridge.API.Database;
 using VxPayBridge.API.Middlewares;
 using VxPayBridge.API.SharedServices.Providers;
+using VxPayBridge.API.SharedServices.Auth;
+using VxPayBridge.API.SharedServices.Ledger;
+using VxPayBridge.API.SharedServices.Sms;
 using VxPayBridge.API.SharedServices.Webhooks;
+using VxPayBridge.API.SharedServices.Withdrawals;
 
 namespace VxPayBridge.API;
 
@@ -39,14 +43,24 @@ public class Program
             .UsePostgreSqlStorage(options =>
                 options.UseNpgsqlConnection(connectionString)));
 
-        builder.Services.AddHangfireServer();
+        builder.Services.AddHangfireServer(options =>
+        {
+            options.Queues = new[] { "sms", "default" };
+        });
 
         builder.Services.AddHttpClient();
+        builder.Services.AddHttpClient<ISmsService, ArkeselSmsService>(client =>
+        {
+            client.BaseAddress = new Uri("https://sms.arkesel.com/");
+        });
         builder.Services.AddHttpContextAccessor();
 
         // Register custom services
         builder.Services.AddScoped<IPaymentProvider, PaystackPaymentProvider>();
+        builder.Services.AddScoped<UserTokenService>();
+        builder.Services.AddScoped<LedgerService>();
         builder.Services.AddScoped<WebhookDeliveryService>();
+        builder.Services.AddScoped<WithdrawalProcessingService>();
 
         var app = builder.Build();
 
@@ -62,11 +76,19 @@ public class Program
         app.UseSwagger();
         app.UseSwaggerUI();
 
-        app.UseInternalApiKeyAuthentication();
+        app.UseUserAuthentication();
         app.UseClientAuthentication();
 
         app.MapCarter();
         app.UseHangfireDashboard("/hangfire");
+        RecurringJob.AddOrUpdate<WebhookDeliveryService>(
+            "deliver-pending-webhooks",
+            service => service.EnqueuePendingWebhookDeliveriesAsync(),
+            Cron.Minutely);
+        RecurringJob.AddOrUpdate<WithdrawalProcessingService>(
+            "process-queued-withdrawals",
+            service => service.ProcessQueuedWithdrawalsAsync(),
+            Cron.Minutely);
 
         app.Run();
     }

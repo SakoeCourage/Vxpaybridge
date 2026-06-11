@@ -18,6 +18,8 @@ public static class GetPaymentStatus
     {
         public string ClientReference { get; set; } = string.Empty;
         public string GatewayTransactionId { get; set; } = string.Empty;
+        public string AudType { get; set; } = string.Empty;
+        public string AudId { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public decimal Amount { get; set; }
         public string Currency { get; set; } = string.Empty;
@@ -61,6 +63,8 @@ public static class GetPaymentStatus
             {
                 ClientReference = transaction.ClientReference,
                 GatewayTransactionId = transaction.GatewayTransactionID,
+                AudType = transaction.AudType,
+                AudId = transaction.AudID,
                 Status = transaction.Status,
                 Amount = transaction.Amount,
                 Currency = transaction.Currency,

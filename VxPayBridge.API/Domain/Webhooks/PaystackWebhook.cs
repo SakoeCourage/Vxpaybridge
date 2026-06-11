@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using VxPayBridge.API.Database;
 using VxPayBridge.API.Database.Entities;
 using VxPayBridge.API.Shared;
+using VxPayBridge.API.SharedServices.Ledger;
 using VxPayBridge.API.SharedServices.Security;
 using VxPayBridge.API.SharedServices.Webhooks;
 
@@ -27,13 +28,20 @@ public static class PaystackWebhook
         private readonly IConfiguration _configuration;
         private readonly ILogger<Handler> _logger;
         private readonly IBackgroundJobClient _backgroundJobClient;
+        private readonly LedgerService _ledgerService;
 
-        public Handler(DatabaseContext dbContext, IConfiguration configuration, ILogger<Handler> logger, IBackgroundJobClient backgroundJobClient)
+        public Handler(
+            DatabaseContext dbContext,
+            IConfiguration configuration,
+            ILogger<Handler> logger,
+            IBackgroundJobClient backgroundJobClient,
+            LedgerService ledgerService)
         {
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
             _backgroundJobClient = backgroundJobClient;
+            _ledgerService = ledgerService;
         }
 
         public async Task<Result<string>> Handle(PaystackWebhookRequest request, CancellationToken cancellationToken)
@@ -55,6 +63,13 @@ public static class PaystackWebhook
             try
             {
                 var payload = JsonNode.Parse(request.RawBody);
+                var eventType = payload?["event"]?.ToString() ?? "unknown";
+
+                if (eventType.StartsWith("transfer.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await HandleTransferWebhookAsync(payload, eventType, request.RawBody, cancellationToken);
+                }
+
                 var metadata = payload?["data"]?["metadata"];
                 
                 if (metadata == null)
@@ -74,17 +89,6 @@ public static class PaystackWebhook
 
                 var clientCode = clientCodeNode.ToString();
                 var gatewayTransactionId = gatewayTxNode.ToString();
-                var eventType = payload?["event"]?.ToString() ?? "unknown";
-
-                // Idempotency Check: Did we already process this exact event for this transaction?
-                var alreadyProcessed = await _dbContext.WebhookEvents
-                    .AnyAsync(w => w.GatewayTransactionID == gatewayTransactionId && w.EventType == eventType, cancellationToken);
-                
-                if (alreadyProcessed)
-                {
-                    _logger.LogInformation("Ignored duplicate webhook event {EventType} for {GatewayTransactionID}", eventType, gatewayTransactionId);
-                    return Result.Success("Ignored: Duplicate webhook");
-                }
 
                 var clientApp = await _dbContext.ClientApps.FirstOrDefaultAsync(c => c.Code == clientCode, cancellationToken);
                 if (clientApp == null)
@@ -93,40 +97,69 @@ public static class PaystackWebhook
                     return Result.Success("Ignored: Unknown client code");
                 }
 
+                var alreadyProcessed = await _dbContext.WebhookEvents
+                    .AnyAsync(w => w.GatewayTransactionID == gatewayTransactionId && w.EventType == eventType, cancellationToken);
+
                 // Update Transaction Status
                 var transaction = await _dbContext.PaymentTransactions
                     .FirstOrDefaultAsync(t => t.GatewayTransactionID == gatewayTransactionId, cancellationToken);
-                
-                if (transaction != null)
+
+                await using var dbTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+                if (!alreadyProcessed)
                 {
-                    if (eventType == "charge.success")
+                    if (transaction != null)
                     {
-                        transaction.Status = "SUCCESS";
+                        if (eventType == "charge.success")
+                        {
+                            transaction.Status = "SUCCESS";
+                        }
+                        else if (eventType == "charge.failed")
+                        {
+                            transaction.Status = "FAILED";
+                        }
+                        transaction.UpdatedAt = DateTime.UtcNow;
                     }
-                    else if (eventType == "charge.failed")
+
+                    var webhookEvent = new WebhookEvent
                     {
-                        transaction.Status = "FAILED";
-                    }
-                    transaction.UpdatedAt = DateTime.UtcNow;
+                        ID = Guid.NewGuid(),
+                        ClientAppID = clientApp.ID,
+                        GatewayTransactionID = gatewayTransactionId,
+                        EventType = eventType,
+                        RawPayload = request.RawBody,
+                        Status = "PENDING",
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _dbContext.WebhookEvents.Add(webhookEvent);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                }
+                else
+                {
+                    _logger.LogInformation("Duplicate webhook event {EventType} for {GatewayTransactionID}; ensuring idempotent side effects", eventType, gatewayTransactionId);
                 }
 
-                // Store Webhook Event
-                var webhookEvent = new WebhookEvent
+                if (transaction != null &&
+                    eventType == "charge.success" &&
+                    !string.IsNullOrWhiteSpace(transaction.AudType) &&
+                    !string.IsNullOrWhiteSpace(transaction.AudID))
                 {
-                    ID = Guid.NewGuid(),
-                    ClientAppID = clientApp.ID,
-                    GatewayTransactionID = gatewayTransactionId,
-                    EventType = eventType,
-                    RawPayload = request.RawBody,
-                    Status = "PENDING",
-                    CreatedAt = DateTime.UtcNow
-                };
+                    await _ledgerService.CreditPaymentAsync(transaction, cancellationToken);
+                }
 
-                _dbContext.WebhookEvents.Add(webhookEvent);
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await dbTransaction.CommitAsync(cancellationToken);
 
                 // Queue Background Job for Delivery
-                _backgroundJobClient.Enqueue<WebhookDeliveryService>(service => service.DeliverWebhookAsync(webhookEvent.ID));
+                var webhookEventId = await _dbContext.WebhookEvents
+                    .Where(w => w.GatewayTransactionID == gatewayTransactionId && w.EventType == eventType)
+                    .Select(w => w.ID)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (webhookEventId != Guid.Empty)
+                {
+                    _backgroundJobClient.Enqueue<WebhookDeliveryService>(service => service.DeliverWebhookAsync(webhookEventId));
+                }
 
                 return Result.Success("Webhook processed successfully");
             }
@@ -135,6 +168,101 @@ public static class PaystackWebhook
                 _logger.LogError(ex, "Error processing webhook");
                 return Result.Failure<string>(new Error("Webhook.Error", "Error processing webhook"));
             }
+        }
+
+        private async Task<Result<string>> HandleTransferWebhookAsync(
+            JsonNode? payload,
+            string eventType,
+            string rawBody,
+            CancellationToken cancellationToken)
+        {
+            var transferCode = payload?["data"]?["transfer_code"]?.ToString();
+            if (string.IsNullOrWhiteSpace(transferCode))
+            {
+                _logger.LogWarning("Transfer webhook missing transfer_code");
+                return Result.Success("Ignored: Missing transfer_code");
+            }
+
+            var withdrawal = await _dbContext.Withdrawals
+                .FirstOrDefaultAsync(w => w.TransferCode == transferCode, cancellationToken);
+
+            if (withdrawal == null)
+            {
+                _logger.LogWarning("Transfer webhook withdrawal not found for {TransferCode}", transferCode);
+                return Result.Success("Ignored: Unknown transfer code");
+            }
+
+            var alreadyProcessed = await _dbContext.WebhookEvents
+                .AnyAsync(w => w.GatewayTransactionID == transferCode && w.EventType == eventType, cancellationToken);
+
+            await using var dbTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+            if (!alreadyProcessed)
+            {
+                if (eventType == "transfer.success")
+                {
+                    if (withdrawal.Status is "QUEUED" or "PROCESSING" or "PENDING")
+                    {
+                        withdrawal.Status = "SUCCESS";
+                        await _ledgerService.CompleteWithdrawalAsync(withdrawal, cancellationToken);
+                    }
+                }
+                else if (eventType == "transfer.failed")
+                {
+                    if (withdrawal.Status is "QUEUED" or "PROCESSING" or "PENDING")
+                    {
+                        withdrawal.Status = "FAILED";
+                        await _ledgerService.ReverseWithdrawalAsync(withdrawal, "WITHDRAWAL_FAILED", cancellationToken);
+                    }
+                }
+                else if (eventType == "transfer.reversed")
+                {
+                    if (withdrawal.Status == "SUCCESS")
+                    {
+                        withdrawal.Status = "REVERSED";
+                        await _ledgerService.ReverseCompletedWithdrawalAsync(withdrawal, cancellationToken);
+                    }
+                    else if (withdrawal.Status is "PENDING" or "PROCESSING")
+                    {
+                        withdrawal.Status = "REVERSED";
+                        await _ledgerService.ReverseWithdrawalAsync(withdrawal, "WITHDRAWAL_REVERSED", cancellationToken);
+                    }
+                }
+
+                withdrawal.UpdatedAt = DateTime.UtcNow;
+
+                var webhookEvent = new WebhookEvent
+                {
+                    ID = Guid.NewGuid(),
+                    ClientAppID = withdrawal.ClientAppID,
+                    GatewayTransactionID = transferCode,
+                    EventType = eventType,
+                    RawPayload = rawBody,
+                    Status = "PENDING",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _dbContext.WebhookEvents.Add(webhookEvent);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            else
+            {
+                _logger.LogInformation("Duplicate transfer webhook event {EventType} for {TransferCode}", eventType, transferCode);
+            }
+
+            await dbTransaction.CommitAsync(cancellationToken);
+
+            var webhookEventId = await _dbContext.WebhookEvents
+                .Where(w => w.GatewayTransactionID == transferCode && w.EventType == eventType)
+                .Select(w => w.ID)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (webhookEventId != Guid.Empty)
+            {
+                _backgroundJobClient.Enqueue<WebhookDeliveryService>(service => service.DeliverWebhookAsync(webhookEventId));
+            }
+
+            return Result.Success("Transfer webhook processed successfully");
         }
     }
 }

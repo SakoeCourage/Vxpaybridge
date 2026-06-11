@@ -2,6 +2,7 @@ using Carter;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using VxPayBridge.API.Database;
 using VxPayBridge.API.Database.Entities;
 using VxPayBridge.API.Shared;
@@ -79,6 +80,11 @@ public static class CreateClientApp
 
 public class MapCreateClientAppEndpoint : ICarterModule
 {
+    public class UpdateClientStatusRequest
+    {
+        public bool IsActive { get; set; }
+    }
+
     public void AddRoutes(IEndpointRouteBuilder app)
     {
         app.MapPost("/api/internal/clients", async (
@@ -106,5 +112,34 @@ public class MapCreateClientAppEndpoint : ICarterModule
         .Produces<CreateClientApp.CreateClientAppResponse>(StatusCodes.Status200OK)
         .Produces<Error>(StatusCodes.Status400BadRequest)
         .Produces<Error>(StatusCodes.Status422UnprocessableEntity);
+
+        app.MapPatch("/api/internal/clients/{id:guid}/status", async (
+            Guid id,
+            [FromBody] UpdateClientStatusRequest request,
+            DatabaseContext dbContext) =>
+        {
+            var clientApp = await dbContext.ClientApps.FirstOrDefaultAsync(c => c.ID == id);
+            if (clientApp == null)
+            {
+                return Results.NotFound();
+            }
+
+            clientApp.IsActive = request.IsActive;
+            clientApp.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync();
+
+            return Results.Ok(new
+            {
+                clientApp.ID,
+                clientApp.Code,
+                clientApp.Name,
+                clientApp.ClientId,
+                clientApp.IsActive,
+                clientApp.UpdatedAt
+            });
+        })
+        .WithName("UpdateClientAppStatus")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
     }
 }

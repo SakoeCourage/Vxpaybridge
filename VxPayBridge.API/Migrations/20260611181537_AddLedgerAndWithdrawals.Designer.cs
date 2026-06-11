@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using VxPayBridge.API.Database;
@@ -11,9 +12,11 @@ using VxPayBridge.API.Database;
 namespace VxPayBridge.API.Migrations
 {
     [DbContext(typeof(DatabaseContext))]
-    partial class DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20260611181537_AddLedgerAndWithdrawals")]
+    partial class AddLedgerAndWithdrawals
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,63 +24,6 @@ namespace VxPayBridge.API.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("VxPayBridge.API.Database.Entities.AppUser", b =>
-                {
-                    b.Property<Guid>("ID")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("TelephoneNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UserName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("ID");
-
-                    b.HasIndex("Email")
-                        .IsUnique();
-
-                    b.HasIndex("TelephoneNumber")
-                        .IsUnique();
-
-                    b.HasIndex("UserName")
-                        .IsUnique();
-
-                    b.ToTable("AppUsers");
-
-                    b.HasData(
-                        new
-                        {
-                            ID = new Guid("45db66dc-f9ef-47e3-bf08-751d946c07ab"),
-                            CreatedAt = new DateTime(2026, 6, 11, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Email = "akorlicourage@gail.com",
-                            IsActive = true,
-                            PasswordHash = "40f66729a9551d5fedb4fff19d6416517cc49873e98b848c5b283fd6a38b9b52",
-                            TelephoneNumber = "0203843143",
-                            UserName = "Sakoe Courage"
-                        });
-                });
 
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.ClientApp", b =>
                 {
@@ -287,38 +233,6 @@ namespace VxPayBridge.API.Migrations
                     b.ToTable("PaymentTransactions");
                 });
 
-            modelBuilder.Entity("VxPayBridge.API.Database.Entities.UserOtp", b =>
-                {
-                    b.Property<Guid>("ID")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CodeHash")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("FailedAttempts")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserID")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("ID");
-
-                    b.HasIndex("UserID", "ExpiresAt");
-
-                    b.ToTable("UserOtps");
-                });
-
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.WebhookEvent", b =>
                 {
                     b.Property<Guid>("ID")
@@ -493,17 +407,6 @@ namespace VxPayBridge.API.Migrations
                         .IsRequired();
 
                     b.Navigation("ClientApp");
-                });
-
-            modelBuilder.Entity("VxPayBridge.API.Database.Entities.UserOtp", b =>
-                {
-                    b.HasOne("VxPayBridge.API.Database.Entities.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserID")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.WebhookEvent", b =>

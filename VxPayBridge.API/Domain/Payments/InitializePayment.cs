@@ -3,6 +3,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using VxPayBridge.API.Database;
 using VxPayBridge.API.Database.Entities;
 using VxPayBridge.API.Shared;
@@ -19,6 +20,9 @@ public static class InitializePayment
         public string ClientReference { get; set; } = string.Empty;
         public string ClientEmail { get; set; } = string.Empty;
         public string CallbackUrl { get; set; } = string.Empty;
+        public string AudType { get; set; } = string.Empty;
+        public string AudId { get; set; } = string.Empty;
+        public Dictionary<string, string>? Metadata { get; set; }
     }
 
     public class Validator : AbstractValidator<InitializePaymentRequest>
@@ -29,6 +33,8 @@ public static class InitializePayment
             RuleFor(x => x.Currency).NotEmpty().WithMessage("Currency is required");
             RuleFor(x => x.ClientReference).NotEmpty().WithMessage("ClientReference is required");
             RuleFor(x => x.ClientEmail).NotEmpty().EmailAddress().WithMessage("Valid ClientEmail is required");
+            RuleFor(x => x.AudType).NotEmpty().WithMessage("AudType is required");
+            RuleFor(x => x.AudId).NotEmpty().WithMessage("AudId is required");
         }
     }
 
@@ -87,6 +93,9 @@ public static class InitializePayment
                 ID = Guid.NewGuid(),
                 ClientAppID = clientAppId,
                 ClientReference = request.ClientReference,
+                AudType = request.AudType,
+                AudID = request.AudId,
+                MetadataJson = request.Metadata == null ? null : JsonSerializer.Serialize(request.Metadata),
                 Amount = request.Amount,
                 Currency = request.Currency,
                 Status = "INITIALIZING",

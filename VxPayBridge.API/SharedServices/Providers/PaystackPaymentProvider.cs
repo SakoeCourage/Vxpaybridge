@@ -35,6 +35,16 @@ public class PaystackPaymentProvider : IPaymentProvider
         {
             // Paystack expects amount in kobo/pesewas (base currency unit)
             var amountInBaseUnit = (long)(transaction.Amount * 100);
+            var metadata = string.IsNullOrWhiteSpace(transaction.MetadataJson)
+                ? new Dictionary<string, object?>()
+                : JsonSerializer.Deserialize<Dictionary<string, object?>>(transaction.MetadataJson, JsonOptions) ?? new Dictionary<string, object?>();
+
+            metadata["gateway_client_code"] = transaction.ClientApp?.Code;
+            metadata["gateway_transaction_id"] = transaction.GatewayTransactionID;
+            metadata["client_reference"] = transaction.ClientReference;
+            metadata["source"] = transaction.ClientApp?.Code;
+            metadata["aud_type"] = transaction.AudType;
+            metadata["aud_id"] = transaction.AudID;
 
             var request = new
             {
@@ -43,12 +53,7 @@ public class PaystackPaymentProvider : IPaymentProvider
                 reference = transaction.GatewayTransactionID,
                 currency = transaction.Currency,
                 callback_url = callbackUrl,
-                metadata = new
-                {
-                    gateway_client_code = transaction.ClientApp?.Code,
-                    gateway_transaction_id = transaction.GatewayTransactionID,
-                    client_reference = transaction.ClientReference
-                }
+                metadata
             };
 
             var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
@@ -83,12 +88,12 @@ public class PaystackPaymentProvider : IPaymentProvider
 
     public Task<Result<IReadOnlyList<PaymentProviderOption>>> GetBanksAsync()
     {
-        return GetProviderOptionsAsync("bank?currency=GHS&country=ghana&type=ghipss&perPage=100", "banks");
+        return GetProviderOptionsAsync("bank?currency=GHS&country=ghana&type=ghipss&perPage=100", "banks", "ghipss");
     }
 
     public Task<Result<IReadOnlyList<PaymentProviderOption>>> GetMobileMoneyProvidersAsync()
     {
-        return GetProviderOptionsAsync("bank?currency=GHS&country=ghana&type=mobile_money&perPage=100", "mobile money providers");
+        return GetProviderOptionsAsync("bank?currency=GHS&country=ghana&type=mobile_money&perPage=100", "mobile money providers", "mobile_money");
     }
 
     public async Task<Result<ResolvedPaymentAccount>> ResolveAccountAsync(string accountNumber, string code)
@@ -127,7 +132,7 @@ public class PaystackPaymentProvider : IPaymentProvider
         }
     }
 
-    private async Task<Result<IReadOnlyList<PaymentProviderOption>>> GetProviderOptionsAsync(string endpoint, string providerType)
+    private async Task<Result<IReadOnlyList<PaymentProviderOption>>> GetProviderOptionsAsync(string endpoint, string providerType, string defaultTransferType)
     {
         try
         {
@@ -152,7 +157,8 @@ public class PaystackPaymentProvider : IPaymentProvider
                 .Select(provider => new PaymentProviderOption
                 {
                     Name = provider.Name,
-                    Code = provider.Code
+                    Code = provider.Code,
+                    Type = string.IsNullOrWhiteSpace(provider.Type) ? defaultTransferType : provider.Type
                 })
                 .ToList();
 
@@ -163,6 +169,107 @@ public class PaystackPaymentProvider : IPaymentProvider
             _logger.LogError(ex, "Exception while fetching Paystack {ProviderType}", providerType);
             return Result.Failure<IReadOnlyList<PaymentProviderOption>>(
                 new Error("Paystack.Exception", $"An error occurred fetching Paystack {providerType}"));
+        }
+    }
+
+    public async Task<Result<TransferRecipientResponse>> CreateTransferRecipientAsync(
+        string type,
+        string name,
+        string accountNumber,
+        string code,
+        string currency)
+    {
+        try
+        {
+            var request = new
+            {
+                type,
+                name,
+                account_number = accountNumber,
+                bank_code = code,
+                currency
+            };
+
+            var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync("transferrecipient", content);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Paystack transfer recipient creation failed: {Response}", responseString);
+                return Result.Failure<TransferRecipientResponse>(
+                    new Error("Paystack.Error", "Failed to create Paystack transfer recipient"));
+            }
+
+            var paystackResponse = JsonSerializer.Deserialize<PaystackTransferRecipientResponse>(responseString, JsonOptions);
+            if (paystackResponse == null || !paystackResponse.Status || paystackResponse.Data == null)
+            {
+                return Result.Failure<TransferRecipientResponse>(
+                    new Error("Paystack.Error", paystackResponse?.Message ?? "Failed to create Paystack transfer recipient"));
+            }
+
+            return Result.Success(new TransferRecipientResponse
+            {
+                RecipientCode = paystackResponse.Data.RecipientCode
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while creating Paystack transfer recipient");
+            return Result.Failure<TransferRecipientResponse>(
+                new Error("Paystack.Exception", "An error occurred creating Paystack transfer recipient"));
+        }
+    }
+
+    public async Task<Result<TransferInitiationResponse>> InitiateTransferAsync(
+        decimal amount,
+        string currency,
+        string recipientCode,
+        string reason,
+        string reference)
+    {
+        try
+        {
+            var amountInBaseUnit = (long)(amount * 100);
+            var request = new
+            {
+                source = "balance",
+                amount = amountInBaseUnit,
+                recipient = recipientCode,
+                reason,
+                currency,
+                reference
+            };
+
+            var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync("transfer", content);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Paystack transfer initiation failed: {Response}", responseString);
+                return Result.Failure<TransferInitiationResponse>(
+                    new Error("Paystack.Error", "Failed to initiate Paystack transfer"));
+            }
+
+            var paystackResponse = JsonSerializer.Deserialize<PaystackTransferResponse>(responseString, JsonOptions);
+            if (paystackResponse == null || !paystackResponse.Status || paystackResponse.Data == null)
+            {
+                return Result.Failure<TransferInitiationResponse>(
+                    new Error("Paystack.Error", paystackResponse?.Message ?? "Failed to initiate Paystack transfer"));
+            }
+
+            return Result.Success(new TransferInitiationResponse
+            {
+                TransferCode = paystackResponse.Data.TransferCode,
+                Status = paystackResponse.Data.Status
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while initiating Paystack transfer");
+            return Result.Failure<TransferInitiationResponse>(
+                new Error("Paystack.Exception", "An error occurred initiating Paystack transfer"));
         }
     }
 
@@ -209,6 +316,9 @@ public class PaystackPaymentProvider : IPaymentProvider
 
         [JsonPropertyName("code")]
         public string Code { get; set; } = string.Empty;
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
     }
 
     private class PaystackResolveAccountResponse
@@ -230,5 +340,44 @@ public class PaystackPaymentProvider : IPaymentProvider
 
         [JsonPropertyName("account_number")]
         public string AccountNumber { get; set; } = string.Empty;
+    }
+
+    private class PaystackTransferRecipientResponse
+    {
+        [JsonPropertyName("status")]
+        public bool Status { get; set; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; } = string.Empty;
+
+        [JsonPropertyName("data")]
+        public PaystackTransferRecipientData? Data { get; set; }
+    }
+
+    private class PaystackTransferRecipientData
+    {
+        [JsonPropertyName("recipient_code")]
+        public string RecipientCode { get; set; } = string.Empty;
+    }
+
+    private class PaystackTransferResponse
+    {
+        [JsonPropertyName("status")]
+        public bool Status { get; set; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; } = string.Empty;
+
+        [JsonPropertyName("data")]
+        public PaystackTransferData? Data { get; set; }
+    }
+
+    private class PaystackTransferData
+    {
+        [JsonPropertyName("transfer_code")]
+        public string TransferCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = string.Empty;
     }
 }

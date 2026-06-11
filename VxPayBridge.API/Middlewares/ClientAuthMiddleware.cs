@@ -30,9 +30,7 @@ public class ClientAuthMiddleware
             return;
         }
 
-        if (context.Request.Path.Equals("/api/payments/banks", StringComparison.OrdinalIgnoreCase) ||
-            context.Request.Path.Equals("/api/payments/mobile-money-providers", StringComparison.OrdinalIgnoreCase) ||
-            context.Request.Path.Equals("/api/payments/resolve-account", StringComparison.OrdinalIgnoreCase))
+        if (context.Request.Path.StartsWithSegments("/api/auth"))
         {
             await _next(context);
             return;

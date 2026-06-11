@@ -1,6 +1,6 @@
 # VxPayBridge — Payment Integration & State Orchestration
 
-VxPayBridge is a stateful orchestrator and payment gateway bridge designed to interface securely between Variable X Solutions internal applications (e.g. `ADBAuction`, Inventory Management) and **Paystack**. It ensures secure, transaction-safe, and idempotent payment processing without exposing core credentials or Paystack logic to frontend or multiple distinct backend systems.
+VxPayBridge is a stateful orchestrator, ledger, and payment gateway bridge designed to interface securely between Variable X Solutions internal applications (e.g. `ADBAuction`, Inventory Management) and **Paystack**. It ensures secure, transaction-safe, and idempotent payment processing without exposing core credentials or Paystack logic to frontend or multiple distinct backend systems.
 
 ## Base URL
 All production endpoints are hosted at:
@@ -20,7 +20,7 @@ sequenceDiagram
 
     %% Client Registration
     Note over ClientApp, Bridge: 0. Registration (Internal Only)
-    ClientApp->>Bridge: Register App (x-internal-api-key required)
+    ClientApp->>Bridge: Register App (admin bearer token required)
     Bridge-->>ClientApp: Return ClientId & ClientSecret
 
     %% Payment Initialization Flow
@@ -55,8 +55,8 @@ sequenceDiagram
 VxPayBridge uses two tiers of authentication:
 
 1. **Internal Admin Endpoints** (`/api/internal/*`)
-   * Protected by a master API key.
-   * Header required: `x-internal-api-key: <your_master_key>`
+   * Protected by user login + SMS OTP.
+   * Header required after OTP verification: `Authorization: Bearer <access_token>`
 
 2. **Client Endpoints** (`/api/payments/*`)
    * Protected by application-specific credentials generated during client registration.
@@ -68,12 +68,61 @@ VxPayBridge uses two tiers of authentication:
 
 ## 🚀 API Endpoint Documentation
 
-### 1. Register Client Application (Internal Admin Only)
+### 1. Bootstrap First Admin User
+Creates the first internal user. This endpoint only works while the `AppUsers` table is empty.
+
+* **Endpoint**: `POST /api/auth/bootstrap-user`
+* **Request Payload**:
+  ```json
+  {
+    "userName": "admin",
+    "email": "admin@example.com",
+    "telephoneNumber": "0244000000",
+    "password": "StrongPassword123"
+  }
+  ```
+
+### 2. Login and Verify OTP
+Internal users log in with username, email, or telephone number plus password. VxPayBridge sends an OTP to the user's telephone number through Arkesel SMS. The user must verify the OTP before receiving an access token.
+
+* **Endpoint**: `POST /api/auth/login`
+* **Request Payload**:
+  ```json
+  {
+    "login": "admin@example.com",
+    "password": "StrongPassword123"
+  }
+  ```
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "otpRequired": true,
+    "message": "OTP sent to the user's telephone number"
+  }
+  ```
+
+* **Endpoint**: `POST /api/auth/verify-otp`
+* **Request Payload**:
+  ```json
+  {
+    "login": "admin@example.com",
+    "otp": "123456"
+  }
+  ```
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "accessToken": "<token>",
+    "expiresAt": "2026-06-11T19:30:00Z"
+  }
+  ```
+
+### 3. Register Client Application (Internal Admin Only)
 Registers a new internal application (like `ADBAuction`) and provides client credentials.
 
 * **Endpoint**: `POST /api/internal/clients`
 * **Headers**:
-  * `x-internal-api-key`: `vx_api_key_8b99d52a220b4ea78e47f2e1a384e912`
+  * `Authorization`: `Bearer <access_token>`
 * **Request Payload**:
   ```json
   {
@@ -92,9 +141,38 @@ Registers a new internal application (like `ADBAuction`) and provides client cre
   > [!WARNING]
   > The `clientSecret` is **only returned once** during this creation step. Store it securely. VxPayBridge stores a hash for client authentication and keeps a server-side signing copy for webhook delivery signatures.
 
+### 4. Activate or Deactivate Client Application
+Marks a client app active or inactive. Inactive client apps cannot call protected client endpoints with `x-client-id` and `x-client-secret`.
+
+* **Endpoint**: `PATCH /api/internal/clients/{id}/status`
+* **Headers**:
+  * `Authorization`: `Bearer <access_token>`
+* **Request Payload**:
+  ```json
+  {
+    "isActive": false
+  }
+  ```
+
+### 5. Create Internal User
+Creates another user who can log in with password + SMS OTP and manage internal endpoints.
+
+* **Endpoint**: `POST /api/internal/users`
+* **Headers**:
+  * `Authorization`: `Bearer <access_token>`
+* **Request Payload**:
+  ```json
+  {
+    "userName": "ops-admin",
+    "email": "ops@example.com",
+    "telephoneNumber": "0244111111",
+    "password": "StrongPassword123"
+  }
+  ```
+
 ---
 
-### 2. Initialize Payment
+### 6. Initialize Payment
 Initiates a new transaction with Paystack and returns the checkout URL.
 
 * **Endpoint**: `POST /api/payments/initialize`
@@ -106,9 +184,17 @@ Initiates a new transaction with Paystack and returns the checkout URL.
   {
     "amount": 250.00,
     "currency": "GHS",
-    "clientReference": "auction-sale-9843",
+    "clientReference": "LOT-000123",
     "clientEmail": "customer@example.com",
-    "callbackUrl": "https://www.vxauction.store/payment/callback"
+    "callbackUrl": "https://www.vxauction.store/payment/callback",
+    "audType": "seller",
+    "audId": "seller_456",
+    "metadata": {
+      "lotId": "lot_001",
+      "lotNumber": "LOT-000123",
+      "paymentId": "payment_001",
+      "buyerId": "buyer_001"
+    }
   }
   ```
 * **Response Payload (200 OK)**:
@@ -122,12 +208,16 @@ Initiates a new transaction with Paystack and returns the checkout URL.
 
 #### 🛡️ Idempotency Guarantee
 * The `clientReference` combined with the calling application identity acts as a unique idempotency key.
+* The `clientReference` must be generated and stored by the client application. Reuse it when retrying the same payment or withdrawal. Generate a new one only for a new money action.
+* For Inventory payment collection, the order number is a good `clientReference` if one order maps to one payment.
+* For Auction sale payment collection, the unique lot number can be used as the `clientReference` if one lot maps to one sale payment.
+* The `audType` and `audId` identify the ledger owner inside the authenticated client application. For example, Auction may use `seller/seller_456`, while Inventory may use `tenant/tenant_123`.
 * If a payment initialization request is repeated with the **same** `clientReference` while the previous transaction is still `PENDING`, VxPayBridge will bypass calling Paystack again and instantly return the existing `authorizationUrl` and `accessCode`.
 * If the transaction has already succeeded or failed, the system blocks the request to prevent double-charges.
 
 ---
 
-### 3. Check Payment Status
+### 7. Check Payment Status
 Allows client applications to pull the current status of a payment transaction at any time.
 
 * **Endpoint**: `GET /api/payments/status/{clientReference}`
@@ -140,6 +230,8 @@ Allows client applications to pull the current status of a payment transaction a
     "id": "7b9954ab-727e-d107-9516-470b820ece66",
     "clientReference": "auction-sale-9843",
     "gatewayTransactionId": "TRX-7b9954ab727ed1079516470b820ece66",
+    "audType": "user",
+    "audId": "seller_456",
     "amount": 250.00,
     "currency": "GHS",
     "status": "SUCCESS",
@@ -151,10 +243,13 @@ Allows client applications to pull the current status of a payment transaction a
 
 ---
 
-### 4. Fetch Paystack Banks
+### 8. Fetch Paystack Banks
 Returns Ghana bank options that can be used for Paystack bank-related flows.
 
 * **Endpoint**: `GET /api/payments/banks`
+* **Headers**:
+  * `x-client-id`: `<client_id>`
+  * `x-client-secret`: `<client_secret>`
 * **Response Payload (200 OK)**:
   ```json
   {
@@ -170,10 +265,13 @@ Returns Ghana bank options that can be used for Paystack bank-related flows.
 
 ---
 
-### 5. Fetch Mobile Money Providers
+### 9. Fetch Mobile Money Providers
 Returns Ghana mobile money provider options supported by Paystack.
 
 * **Endpoint**: `GET /api/payments/mobile-money-providers`
+* **Headers**:
+  * `x-client-id`: `<client_id>`
+  * `x-client-secret`: `<client_secret>`
 * **Response Payload (200 OK)**:
   ```json
   {
@@ -189,10 +287,13 @@ Returns Ghana mobile money provider options supported by Paystack.
 
 ---
 
-### 6. Resolve Account
+### 10. Resolve Account
 Resolves a bank or mobile money account number against a Paystack provider code.
 
 * **Endpoint**: `GET /api/payments/resolve-account?code=<provider_code>&accountNumber=<account_number>`
+* **Headers**:
+  * `x-client-id`: `<client_id>`
+  * `x-client-secret`: `<client_secret>`
 * **Response Payload (200 OK)**:
   ```json
   {
@@ -206,13 +307,103 @@ Resolves a bank or mobile money account number against a Paystack provider code.
 
 ---
 
-### 7. Paystack Webhook Handler (Public)
+### 11. Get Ledger Balance
+Returns the current VxPayBridge balance for an entity inside the authenticated client application.
+
+* **Endpoint**: `GET /api/ledger/balance?audType=<aud_type>&audId=<aud_id>&currency=GHS`
+* **Headers**:
+  * `x-client-id`: `<your_client_id>`
+  * `x-client-secret`: `<your_client_secret>`
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "audType": "user",
+    "audId": "seller_456",
+    "currency": "GHS",
+    "availableBalance": 150.00,
+    "pendingBalance": 100.00,
+    "totalBalance": 250.00
+  }
+  ```
+
+---
+
+### 12. Get Ledger Transactions
+Returns paginated ledger entries for an entity inside the authenticated client application.
+
+* **Endpoint**: `GET /api/ledger/transactions?audType=<aud_type>&audId=<aud_id>&currency=GHS&pageNumber=1&pageSize=20`
+* **Headers**:
+  * `x-client-id`: `<your_client_id>`
+  * `x-client-secret`: `<your_client_secret>`
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "totalCount": 1,
+    "pageNumber": 1,
+    "pageSize": 20,
+    "data": [
+      {
+        "type": "CREDIT",
+        "reason": "PAYMENT_SUCCESS",
+        "reference": "payment:7b9954ab-727e-d107-9516-470b820ece66",
+        "amount": 250.00,
+        "currency": "GHS",
+        "balanceAfter": 250.00,
+        "createdAt": "2026-06-10T17:39:32Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 13. Confirm Withdrawal
+Initiates a Paystack transfer from the VxPayBridge ledger balance for a specific `audType` + `audId`.
+
+* **Endpoint**: `POST /api/payments/withdrawal/confirm`
+* **Headers**:
+  * `x-client-id`: `<your_client_id>`
+  * `x-client-secret`: `<your_client_secret>`
+* **Request Payload**:
+  ```json
+  {
+    "amount": 100.00,
+    "currency": "GHS",
+    "audType": "seller",
+    "audId": "seller_456",
+    "code": "mtn",
+    "accountNumber": "0244000000",
+    "accountName": "Customer Name",
+    "clientReference": "LOT-000123-payout",
+    "reason": "Seller payout for lot LOT-000123"
+  }
+  ```
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "success": true,
+    "status": "QUEUED",
+    "transferCode": null
+  }
+  ```
+
+VxPayBridge reserves the amount from `availableBalance` into `pendingBalance`, stores the withdrawal as `QUEUED`, and processes the Paystack transfer asynchronously. If Paystack transfer initiation fails, the reserved amount is reversed back into available balance. If Paystack confirms transfer success, the pending amount is cleared.
+
+The withdrawal `clientReference` must be different from the payment collection `clientReference`. For example, Auction may use `LOT-000123` for the buyer payment and `LOT-000123-payout` for the seller payout.
+
+> Valid withdrawal status values: `QUEUED`, `PROCESSING`, `PENDING`, `SUCCESS`, `FAILED`, `REVERSED`.
+
+---
+
+### 14. Paystack Webhook Handler (Public)
 Public-facing endpoint target configured in your Paystack dashboard to receive real-time webhook updates.
 
 * **Endpoint**: `POST /api/webhooks/paystack`
 * **Webhook Target URL**: `https://vxpaybridge.fly.dev/api/webhooks/paystack`
 * **Payload signature verification**: Verified using the `x-paystack-signature` header as an HMAC SHA-512 signature against the system's `Paystack:SecretKey`.
 * **Webhook Deduplication**: Webhooks are uniquely deduplicated using the combination of `gateway_transaction_id` + `event` to ensure that duplicate webhook calls from Paystack do not trigger duplicate handlers or deliveries.
+* **Ledger Updates**: `charge.success` credits the matching ledger account. `transfer.failed` and `transfer.reversed` reverse reserved withdrawal amounts.
+* **Recovery Jobs**: Stored webhook events with `PENDING` or `FAILED` delivery status are periodically re-enqueued for delivery. Queued withdrawals are also periodically retried by the background worker.
 
 ---
 

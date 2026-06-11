@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using VxPayBridge.API.Database;
@@ -11,9 +12,11 @@ using VxPayBridge.API.Database;
 namespace VxPayBridge.API.Migrations
 {
     [DbContext(typeof(DatabaseContext))]
-    partial class DatabaseContextModelSnapshot : ModelSnapshot
+    [Migration("20260611184713_AddUserAuthentication")]
+    partial class AddUserAuthentication
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -65,18 +68,6 @@ namespace VxPayBridge.API.Migrations
                         .IsUnique();
 
                     b.ToTable("AppUsers");
-
-                    b.HasData(
-                        new
-                        {
-                            ID = new Guid("45db66dc-f9ef-47e3-bf08-751d946c07ab"),
-                            CreatedAt = new DateTime(2026, 6, 11, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Email = "akorlicourage@gail.com",
-                            IsActive = true,
-                            PasswordHash = "40f66729a9551d5fedb4fff19d6416517cc49873e98b848c5b283fd6a38b9b52",
-                            TelephoneNumber = "0203843143",
-                            UserName = "Sakoe Courage"
-                        });
                 });
 
             modelBuilder.Entity("VxPayBridge.API.Database.Entities.ClientApp", b =>
