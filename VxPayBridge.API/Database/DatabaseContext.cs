@@ -36,7 +36,7 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<PaymentTransaction>(entity =>
         {
             entity.HasKey(e => e.ID);
-            entity.HasIndex(e => e.ClientReference).IsUnique();
+            entity.HasIndex(e => new { e.ClientAppID, e.ClientReference }).IsUnique();
             entity.HasOne(e => e.ClientApp)
                 .WithMany()
                 .HasForeignKey(e => e.ClientAppID)

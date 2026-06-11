@@ -45,8 +45,8 @@ public static class PaystackWebhook
                 return Result.Failure<string>(new Error("Configuration", "Server configuration error"));
             }
 
-            // Verify Paystack Signature
-            if (!HmacHelper.ValidateSignature(secretKey, request.RawBody, request.Signature))
+            // Paystack signs webhooks with HMAC SHA-512 using the Paystack secret key.
+            if (!HmacHelper.ValidateSha512Signature(secretKey, request.RawBody, request.Signature))
             {
                 _logger.LogWarning("Invalid Paystack webhook signature");
                 return Result.Failure<string>(Error.Unauthorized("Invalid signature"));

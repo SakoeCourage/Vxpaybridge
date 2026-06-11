@@ -8,6 +8,7 @@ public class ClientApp
     public string WebhookUrl { get; set; } = string.Empty;
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecretHash { get; set; } = string.Empty;
+    public string? WebhookSigningSecret { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

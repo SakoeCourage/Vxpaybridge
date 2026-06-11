@@ -60,6 +60,7 @@ public static class CreateClientApp
                 WebhookUrl = request.WebhookUrl,
                 ClientId = clientId,
                 ClientSecretHash = clientSecretHash,
+                WebhookSigningSecret = clientSecret,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };

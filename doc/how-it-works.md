@@ -90,7 +90,7 @@ Registers a new internal application (like `ADBAuction`) and provides client cre
   }
   ```
   > [!WARNING]
-  > The `clientSecret` is hashed in the database and is **only returned once** during this creation step. Store it securely.
+  > The `clientSecret` is **only returned once** during this creation step. Store it securely. VxPayBridge stores a hash for client authentication and keeps a server-side signing copy for webhook delivery signatures.
 
 ---
 
@@ -151,12 +151,67 @@ Allows client applications to pull the current status of a payment transaction a
 
 ---
 
-### 4. Paystack Webhook Handler (Public)
+### 4. Fetch Paystack Banks
+Returns Ghana bank options that can be used for Paystack bank-related flows.
+
+* **Endpoint**: `GET /api/payments/banks`
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "status": true,
+    "data": [
+      {
+        "name": "Example Bank",
+        "code": "123"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 5. Fetch Mobile Money Providers
+Returns Ghana mobile money provider options supported by Paystack.
+
+* **Endpoint**: `GET /api/payments/mobile-money-providers`
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "status": true,
+    "data": [
+      {
+        "name": "MTN",
+        "code": "mtn"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 6. Resolve Account
+Resolves a bank or mobile money account number against a Paystack provider code.
+
+* **Endpoint**: `GET /api/payments/resolve-account?code=<provider_code>&accountNumber=<account_number>`
+* **Response Payload (200 OK)**:
+  ```json
+  {
+    "status": true,
+    "data": {
+      "accountName": "Customer Name",
+      "accountNumber": "0244000000"
+    }
+  }
+  ```
+
+---
+
+### 7. Paystack Webhook Handler (Public)
 Public-facing endpoint target configured in your Paystack dashboard to receive real-time webhook updates.
 
 * **Endpoint**: `POST /api/webhooks/paystack`
 * **Webhook Target URL**: `https://vxpaybridge.fly.dev/api/webhooks/paystack`
-* **Payload signature verification**: Verified using the `x-paystack-signature` header against the system's `Paystack:SecretKey`.
+* **Payload signature verification**: Verified using the `x-paystack-signature` header as an HMAC SHA-512 signature against the system's `Paystack:SecretKey`.
 * **Webhook Deduplication**: Webhooks are uniquely deduplicated using the combination of `gateway_transaction_id` + `event` to ensure that duplicate webhook calls from Paystack do not trigger duplicate handlers or deliveries.
 
 ---

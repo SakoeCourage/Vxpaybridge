@@ -32,18 +32,31 @@ public class WebhookDeliveryService
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(webhookEvent.ClientApp.WebhookSigningSecret))
+        {
+            _logger.LogError("Webhook signing secret is missing for client app {ClientAppId}.", webhookEvent.ClientApp.ID);
+            webhookEvent.Status = "FAILED";
+            webhookEvent.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync();
+            return;
+        }
+
         try
         {
             webhookEvent.RetryCount++;
 
             var client = httpClientFactory.CreateClient();
-            var content = new StringContent(webhookEvent.RawPayload, Encoding.UTF8, "application/json");
+            using var request = new HttpRequestMessage(HttpMethod.Post, webhookEvent.ClientApp.WebhookUrl)
+            {
+                Content = new StringContent(webhookEvent.RawPayload, Encoding.UTF8, "application/json")
+            };
 
-            // Sign the payload using the client's secret so the client can verify it came from VxPayBridge
-            var signature = HmacHelper.GenerateSignature(webhookEvent.ClientApp.ClientSecretHash, webhookEvent.RawPayload);
-            content.Headers.Add("x-vx-signature", signature);
+            var signature = HmacHelper.GenerateSha256Signature(
+                webhookEvent.ClientApp.WebhookSigningSecret,
+                webhookEvent.RawPayload);
+            request.Headers.Add("x-payload-signature", signature);
 
-            var response = await client.PostAsync(webhookEvent.ClientApp.WebhookUrl, content);
+            var response = await client.SendAsync(request);
 
             if (response.IsSuccessStatusCode)
             {

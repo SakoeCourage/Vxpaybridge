@@ -30,6 +30,14 @@ public class ClientAuthMiddleware
             return;
         }
 
+        if (context.Request.Path.Equals("/api/payments/banks", StringComparison.OrdinalIgnoreCase) ||
+            context.Request.Path.Equals("/api/payments/mobile-money-providers", StringComparison.OrdinalIgnoreCase) ||
+            context.Request.Path.Equals("/api/payments/resolve-account", StringComparison.OrdinalIgnoreCase))
+        {
+            await _next(context);
+            return;
+        }
+
         // Only authenticate /api endpoints
         if (!context.Request.Path.StartsWithSegments("/api"))
         {
