@@ -104,11 +104,11 @@ public class Program
         RecurringJob.AddOrUpdate<WebhookDeliveryService>(
             "deliver-pending-webhooks",
             service => service.EnqueuePendingWebhookDeliveriesAsync(),
-            Cron.Minutely);
+            "*/5 * * * *");
         RecurringJob.AddOrUpdate<WithdrawalProcessingService>(
             "process-queued-withdrawals",
             service => service.ProcessQueuedWithdrawalsAsync(),
-            Cron.Minutely);
+            "*/5 * * * *");
 
         app.Run();
     }
