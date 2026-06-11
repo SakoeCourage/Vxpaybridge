@@ -10,14 +10,6 @@ using VxPayBridge.API.SharedServices.Sms;
 
 namespace VxPayBridge.API.Domain.Auth;
 
-public class BootstrapUserRequest
-{
-    public string UserName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string TelephoneNumber { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
-}
-
 public class LoginRequest
 {
     public string Login { get; set; } = string.Empty;
@@ -46,37 +38,6 @@ public class MapUserAuthenticationEndpoints : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/auth/bootstrap-user",
-            async ([FromBody] BootstrapUserRequest request, DatabaseContext dbContext) =>
-            {
-                if (await dbContext.AppUsers.AnyAsync())
-                {
-                    return Results.Conflict(new { error = "Bootstrap is disabled after the first user is created" });
-                }
-
-                var validationError = ValidateUserRequest(request);
-                if (validationError != null)
-                {
-                    return Results.BadRequest(new { error = validationError });
-                }
-
-                var user = new AppUser
-                {
-                    ID = Guid.NewGuid(),
-                    UserName = request.UserName.Trim(),
-                    Email = request.Email.Trim().ToLowerInvariant(),
-                    TelephoneNumber = request.TelephoneNumber.Trim(),
-                    PasswordHash = HmacHelper.HashSecret(request.Password),
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                dbContext.AppUsers.Add(user);
-                await dbContext.SaveChangesAsync();
-                return Results.Ok(new { user.ID, user.UserName, user.Email, user.TelephoneNumber });
-            })
-            .WithTags("Auth")
-            .WithName("BootstrapUser");
-
         app.MapPost("/api/auth/login",
             async ([FromBody] LoginRequest request, DatabaseContext dbContext, ISmsService smsService) =>
             {
@@ -159,14 +120,5 @@ public class MapUserAuthenticationEndpoints : ICarterModule
             })
             .WithTags("Auth")
             .WithName("VerifyUserOtp");
-    }
-
-    private static string? ValidateUserRequest(BootstrapUserRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.UserName)) return "UserName is required";
-        if (string.IsNullOrWhiteSpace(request.Email)) return "Email is required";
-        if (string.IsNullOrWhiteSpace(request.TelephoneNumber)) return "TelephoneNumber is required";
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8) return "Password must be at least 8 characters";
-        return null;
     }
 }

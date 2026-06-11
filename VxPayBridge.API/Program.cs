@@ -3,6 +3,7 @@ using FluentValidation;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using VxPayBridge.API.Database;
 using VxPayBridge.API.Middlewares;
 using VxPayBridge.API.SharedServices.Providers;
@@ -22,7 +23,26 @@ public class Program
         var assembly = typeof(Program).Assembly;
 
         builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
+        builder.Services.AddSwaggerGen(options =>
+        {
+            options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+            {
+                Name = "Authorization",
+                Type = SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                In = ParameterLocation.Header,
+                Description = "Enter your bearer token. Example: Bearer eyJhbGciOi..."
+            });
+
+            options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+            {
+                {
+                    new OpenApiSecuritySchemeReference("Bearer", null, null),
+                    new List<string>()
+                }
+            });
+        });
         
         builder.Services.AddCarter();
         builder.Services.AddMediatR(config => config.RegisterServicesFromAssemblies(assembly));

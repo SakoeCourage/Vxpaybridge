@@ -68,21 +68,7 @@ VxPayBridge uses two tiers of authentication:
 
 ## 🚀 API Endpoint Documentation
 
-### 1. Bootstrap First Admin User
-Creates the first internal user. This endpoint only works while the `AppUsers` table is empty.
-
-* **Endpoint**: `POST /api/auth/bootstrap-user`
-* **Request Payload**:
-  ```json
-  {
-    "userName": "admin",
-    "email": "admin@example.com",
-    "telephoneNumber": "0244000000",
-    "password": "StrongPassword123"
-  }
-  ```
-
-### 2. Login and Verify OTP
+### 1. Login and Verify OTP
 Internal users log in with username, email, or telephone number plus password. VxPayBridge sends an OTP to the user's telephone number through Arkesel SMS. The user must verify the OTP before receiving an access token.
 
 * **Endpoint**: `POST /api/auth/login`
@@ -117,7 +103,9 @@ Internal users log in with username, email, or telephone number plus password. V
   }
   ```
 
-### 3. Register Client Application (Internal Admin Only)
+The initial internal user is seeded through database migrations. Additional users must be created by an authenticated internal user through `POST /api/internal/users`.
+
+### 2. Register Client Application (Internal Admin Only)
 Registers a new internal application (like `ADBAuction`) and provides client credentials.
 
 * **Endpoint**: `POST /api/internal/clients`
@@ -141,7 +129,7 @@ Registers a new internal application (like `ADBAuction`) and provides client cre
   > [!WARNING]
   > The `clientSecret` is **only returned once** during this creation step. Store it securely. VxPayBridge stores a hash for client authentication and keeps a server-side signing copy for webhook delivery signatures.
 
-### 4. Activate or Deactivate Client Application
+### 3. Activate or Deactivate Client Application
 Marks a client app active or inactive. Inactive client apps cannot call protected client endpoints with `x-client-id` and `x-client-secret`.
 
 * **Endpoint**: `PATCH /api/internal/clients/{id}/status`
@@ -154,7 +142,7 @@ Marks a client app active or inactive. Inactive client apps cannot call protecte
   }
   ```
 
-### 5. Create Internal User
+### 4. Create Internal User
 Creates another user who can log in with password + SMS OTP and manage internal endpoints.
 
 * **Endpoint**: `POST /api/internal/users`
@@ -172,7 +160,7 @@ Creates another user who can log in with password + SMS OTP and manage internal 
 
 ---
 
-### 6. Initialize Payment
+### 5. Initialize Payment
 Initiates a new transaction with Paystack and returns the checkout URL.
 
 * **Endpoint**: `POST /api/payments/initialize`
@@ -217,7 +205,7 @@ Initiates a new transaction with Paystack and returns the checkout URL.
 
 ---
 
-### 7. Check Payment Status
+### 6. Check Payment Status
 Allows client applications to pull the current status of a payment transaction at any time.
 
 * **Endpoint**: `GET /api/payments/status/{clientReference}`
@@ -243,7 +231,7 @@ Allows client applications to pull the current status of a payment transaction a
 
 ---
 
-### 8. Fetch Paystack Banks
+### 7. Fetch Paystack Banks
 Returns Ghana bank options that can be used for Paystack bank-related flows.
 
 * **Endpoint**: `GET /api/payments/banks`
@@ -265,7 +253,7 @@ Returns Ghana bank options that can be used for Paystack bank-related flows.
 
 ---
 
-### 9. Fetch Mobile Money Providers
+### 8. Fetch Mobile Money Providers
 Returns Ghana mobile money provider options supported by Paystack.
 
 * **Endpoint**: `GET /api/payments/mobile-money-providers`
@@ -287,7 +275,7 @@ Returns Ghana mobile money provider options supported by Paystack.
 
 ---
 
-### 10. Resolve Account
+### 9. Resolve Account
 Resolves a bank or mobile money account number against a Paystack provider code.
 
 * **Endpoint**: `GET /api/payments/resolve-account?code=<provider_code>&accountNumber=<account_number>`
@@ -307,7 +295,7 @@ Resolves a bank or mobile money account number against a Paystack provider code.
 
 ---
 
-### 11. Get Ledger Balance
+### 10. Get Ledger Balance
 Returns the current VxPayBridge balance for an entity inside the authenticated client application.
 
 * **Endpoint**: `GET /api/ledger/balance?audType=<aud_type>&audId=<aud_id>&currency=GHS`
@@ -328,7 +316,7 @@ Returns the current VxPayBridge balance for an entity inside the authenticated c
 
 ---
 
-### 12. Get Ledger Transactions
+### 11. Get Ledger Transactions
 Returns paginated ledger entries for an entity inside the authenticated client application.
 
 * **Endpoint**: `GET /api/ledger/transactions?audType=<aud_type>&audId=<aud_id>&currency=GHS&pageNumber=1&pageSize=20`
@@ -357,7 +345,7 @@ Returns paginated ledger entries for an entity inside the authenticated client a
 
 ---
 
-### 13. Confirm Withdrawal
+### 12. Confirm Withdrawal
 Initiates a Paystack transfer from the VxPayBridge ledger balance for a specific `audType` + `audId`.
 
 * **Endpoint**: `POST /api/payments/withdrawal/confirm`
@@ -395,7 +383,7 @@ The withdrawal `clientReference` must be different from the payment collection `
 
 ---
 
-### 14. Paystack Webhook Handler (Public)
+### 13. Paystack Webhook Handler (Public)
 Public-facing endpoint target configured in your Paystack dashboard to receive real-time webhook updates.
 
 * **Endpoint**: `POST /api/webhooks/paystack`
