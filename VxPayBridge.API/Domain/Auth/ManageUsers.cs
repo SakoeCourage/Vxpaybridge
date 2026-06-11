@@ -28,6 +28,27 @@ public class MapManageUsersEndpoints : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/internal/users",
+            async (DatabaseContext dbContext) =>
+            {
+                var users = await dbContext.AppUsers
+                    .OrderBy(u => u.UserName)
+                    .Select(u => new UserResponse
+                    {
+                        Id = u.ID,
+                        UserName = u.UserName,
+                        Email = u.Email,
+                        TelephoneNumber = u.TelephoneNumber,
+                        IsActive = u.IsActive
+                    })
+                    .ToListAsync();
+
+                return Results.Ok(users);
+            })
+            .WithTags("Internal Users")
+            .WithName("GetInternalUsers")
+            .Produces<List<UserResponse>>(StatusCodes.Status200OK);
+
         app.MapPost("/api/internal/users",
             async ([FromBody] CreateUserRequest request, DatabaseContext dbContext) =>
             {
@@ -66,7 +87,10 @@ public class MapManageUsersEndpoints : ICarterModule
                 return Results.Ok(ToResponse(user));
             })
             .WithTags("Internal Users")
-            .WithName("CreateInternalUser");
+            .WithName("CreateInternalUser")
+            .Produces<UserResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status409Conflict);
 
         app.MapPatch("/api/internal/users/{id:guid}/status",
             async (Guid id, [FromBody] UpdateUserStatusRequest request, DatabaseContext dbContext) =>
@@ -83,7 +107,9 @@ public class MapManageUsersEndpoints : ICarterModule
                 return Results.Ok(ToResponse(user));
             })
             .WithTags("Internal Users")
-            .WithName("UpdateInternalUserStatus");
+            .WithName("UpdateInternalUserStatus")
+            .Produces<UserResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static UserResponse ToResponse(AppUser user)

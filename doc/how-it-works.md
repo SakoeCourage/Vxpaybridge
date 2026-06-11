@@ -158,6 +158,24 @@ Creates another user who can log in with password + SMS OTP and manage internal 
   }
   ```
 
+Internal users can also be listed without exposing password hashes or raw passwords.
+
+* **Endpoint**: `GET /api/internal/users`
+* **Headers**:
+  * `Authorization`: `Bearer <access_token>`
+* **Response Payload (200 OK)**:
+  ```json
+  [
+    {
+      "id": "45db66dc-f9ef-47e3-bf08-751d946c07ab",
+      "userName": "Sakoe Courage",
+      "email": "akorlicourage@gail.com",
+      "telephoneNumber": "0203843143",
+      "isActive": true
+    }
+  ]
+  ```
+
 ---
 
 ### 5. Initialize Payment
